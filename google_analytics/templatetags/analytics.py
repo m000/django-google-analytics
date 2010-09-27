@@ -2,61 +2,55 @@ from django import template
 from django.db import models
 from django.contrib.sites.models import Site
 
-from django.template import Context, loader
-
+from django.template import Variable, Context, loader
 
 register = template.Library()
 Analytics = models.get_model('googleanalytics', 'analytics')
 
 def do_get_analytics(parser, token):
     contents = token.split_contents()
-    tag_name = contents[0]
-    template_name = 'google_analytics/%s_template.html' % tag_name
-    if len(contents) == 2:
-        # split_contents() knows not to split quoted strings.
-        code = contents[1]
-    elif len(contents) == 1:
-        code = None
-    else:
-        raise template.TemplateSyntaxError, "%r cannot take more than one argument" % tag_name
-   
-    if not code:
-        current_site = Site.objects.get_current()
-    else:
-        if not (code[0] == code[-1] and code[0] in ('"', "'")):
-            raise template.TemplateSyntaxError, "%r tag's argument should be in quotes" % tag_name
-        code = code[1:-1]
-        current_site = None
+    # Evaluation of arguments is now made during rendering.
+    return AnalyticsNode(contents)
 
-    return AnalyticsNode(current_site, code, template_name)
-    
 class AnalyticsNode(template.Node):
-    def __init__(self, site=None, code=None, template_name='google_analytics/analytics_template.html'):
-        self.site = site
-        self.code = code
-        self.template_name = template_name
+    def __init__(self, ttag_arguments):
+        # set defaults
+        self.code = None
+        self.template_name = 'google_analytics/%s_template.html' % ttag_arguments[0]
+
+        # create variables to be evaluated during rendering phase
+        self.arguments = ttag_arguments[1:]
+
         
     def render(self, context):
-        content = ''
-        if self.site:
-            code_set = self.site.analytics_set.all()
-            if code_set:
-                code = code_set[0].analytics_code
+        for arg in self.arguments:
+            # arguments parsing & evaluation
+            key, sep, val = arg.partition('=')
+            if sep:
+                setattr(self, key, Variable(val).resolve(context))
+                print getattr(self, key)
             else:
+                # No separator found. Treat argument as code.
+                # Unless the argument is quoted, it will be looked-up in the context.
+                # Because of this, a VariableDoesNotExist error is generated for unquoted arguments.
+                self.code = Variable(arg).resolve(context).strip()
+
+        if not self.code:
+            # No code has been specified as argument. Retrieve the one associated with the current site.
+            current_site = Site.objects.get_current()
+            current_site_analytics = current_site.analytics_set.all()
+            if current_site_analytics:
+                self.code = current_site_analytics[0].analytics_code.strip()
+                # An empty code is associated with the site. Render nothing.
+                if not self.code: return ''
+            else:
+                # No code associated with the site. Render nothing.
                 return ''
-        elif self.code:
-            code = self.code
-        else:
-            return ''
-        
-        if code.strip() != '':
-            t = loader.get_template(self.template_name)
-            c = Context({
-                'analytics_code': code,
-            })
-            return t.render(c)
-        else:
-            return ''
+
+        return loader.get_template(self.template_name).render(Context({
+            'analytics_code': self.code,
+        }))
         
 register.tag('analytics', do_get_analytics)
 register.tag('analytics_async', do_get_analytics)
+
