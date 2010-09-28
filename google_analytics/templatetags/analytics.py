@@ -13,15 +13,18 @@ def do_get_analytics(parser, token):
     return AnalyticsNode(contents)
 
 class AnalyticsNode(template.Node):
-    VALID_ATTRIBUTES = ['code', 'template_name']
+    VALID_ATTRIBUTES = ['code', 'template_name', 'tracked_dl_extensions', 'tracked_dl_root', 'jquery']
 
     def __init__(self, ttag_arguments):
         # set defaults
         self.tag_name = ttag_arguments[0]
         self.code = None
         self.template_name = 'google_analytics/%s_template.html' % self.tag_name
+        self.tracked_dl_extensions = None
+        self.tracked_dl_root = None
+        self.jquery = None
 
-        # create variables to be evaluated during rendering phase
+        # store the rest of the arguments for render-time evaluation
         self.arguments = ttag_arguments[1:]
 
         
@@ -54,6 +57,9 @@ class AnalyticsNode(template.Node):
 
         return loader.get_template(self.template_name).render(Context({
             'analytics_code': self.code,
+            'tracked_dl_extensions': self.tracked_dl_extensions,
+            'tracked_dl_root': self.tracked_dl_root,
+            'jquery': self.jquery,
         }))
         
 register.tag('analytics', do_get_analytics)

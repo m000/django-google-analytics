@@ -1,7 +1,73 @@
+{% block analytics-jquery %}{% if jquery %}
+<script type="text/javascript" src="/static/jquery-1.4.2.min.js"></script>
+{% endif %}{% endblock analytics-jquery %}
 <script type="text/javascript">{% block page-tracking %}
         var gaJsHost = (("https:" == document.location.protocol) ? "https://ssl." : "http://www.");
         document.write(unescape("%3Cscript src='" + gaJsHost + "google-analytics.com/ga.js' type='text/javascript'%3E%3C/script%3E"));
         var pageTracker = _gat._getTracker("{{ analytics_code }}");
         pageTracker._initData();
         pageTracker._trackPageview();
-    {% endblock page-tracking %}</script>
+{% endblock page-tracking %}{% block downloads-tracking %}{% if tracked_dl_extensions %}
+        // Document downloads tracking using jquery.
+        // Based on this Q&A: http://www.google.com/support/analytics/bin/answer.py?hl=en&answer=55529
+        // Uses James Padosley regex selector for jquery (http://james.padolsey.com/javascript/regex-selector-for-jquery/)
+        // Currently this should work only for absolute site links (i.e. /foo/bar.pdf) or when tracked_dl_root is supplied.
+
+        $.expr[':'].regex = function(elem, index, match) {
+            var matchParams = match[3].split(','),
+                validLabels = /^(data|css):/,
+                attr = {
+                    method: matchParams[0].match(validLabels) ? 
+                        matchParams[0].split(':')[0] : 'attr',
+                        property: matchParams.shift().replace(validLabels,'')
+                },
+                regexFlags = 'ig', // this makes searches case insensitive & global
+                regex = new RegExp(matchParams.join('').replace(/^\s+|\s+$/g,''), regexFlags);
+            return regex.test(jQuery(elem)[attr.method](attr.property));
+        };
+
+        $(document).ready(function() {
+            // globals - accessible from handlers
+            tracked_dl_root = $.trim("{{ tracked_dl_root }}");
+            tracked_dl_root = (tracked_dl_root != "None") && tracked_dl_root ||  null;
+
+            // locals
+            var tracked_dl_extensions = $.map(
+                "{{ tracked_dl_extensions }}".split(","),
+                function(e) { return $.trim(e); }
+            );
+            var tracked_documents = 'a:regex(href, \\.(' +tracked_dl_extensions.join('|')+  '))';
+
+            // debug alerts
+            /*
+            alert(tracked_dl_root);
+            alert(tracked_dl_extensions.join('|'));
+            alert(tracked_documents);
+            alert($(tracked_documents));
+            $.each($(tracked_documents), function(key, value) { 
+                alert(key + ': ' + value); 
+            });
+            alert(location.host);
+            */
+            $(tracked_documents).click(function() {
+                var local_tracked_dl_root = tracked_dl_root;
+                var path_components = $(this).attr('href').split('/');
+                var basename = path_components[path_components.length - 1].replace(/\.[^.]*$/g, "");
+
+                if (local_tracked_dl_root == null) {
+                    if (path_components[0] == 'http:' || path_components[0] == 'https:') {
+                        alert('test1');
+                        //local_tracked_dl_root = '/'.join(path_components.slice(2, path_components.length-2));
+                    } // == .. ???
+                    else {
+                        alert('test2');
+                        //local_tracked_dl_root = '/'.join(path_components.slice(0, path_components.length-2));
+                    }
+                }
+
+                pageTracker._trackPageview(local_tracked_dl_root+'/'+basename);
+            });
+        });
+    {% endif %}{% endblock downloads-tracking %}</script>
+
+
